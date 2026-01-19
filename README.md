@@ -5,13 +5,13 @@ Backend API desenvolvido em Spring Boot 3.2.x com Java 17.
 ## 📋 Índice
 
 - [Requisitos](#requisitos)
+- [Tecnologias Utilizadas](#tecnologias-utilizadas)
 - [Configuração](#configuração)
 - [Executando a Aplicação](#executando-a-aplicação)
 - [Documentação da API (Swagger)](#documentação-da-api-swagger)
 - [Estrutura do Projeto](#estrutura-do-projeto)
 - [Endpoints Disponíveis](#endpoints-disponíveis)
 - [Autenticação JWT](#autenticação-jwt)
-- [Tecnologias Utilizadas](#tecnologias-utilizadas)
 - [Desenvolvimento](#desenvolvimento)
 
 ## 🔧 Requisitos
@@ -20,6 +20,18 @@ Backend API desenvolvido em Spring Boot 3.2.x com Java 17.
 - **Maven 3.6+**
 - **PostgreSQL 16** (ou superior)
 - **Docker** (opcional, para desenvolvimento local)
+
+## 🛠️ Tecnologias Utilizadas
+
+- **Spring Boot 3.2.0**: Framework principal
+- **Spring Data JPA**: Persistência de dados
+- **Spring Security**: Autenticação e autorização
+- **PostgreSQL**: Banco de dados relacional
+- **JWT (jjwt 0.12.3)**: Tokens de autenticação
+- **Lombok**: Redução de boilerplate
+- **Bean Validation**: Validação de dados
+- **SpringDoc OpenAPI 2.3.0**: Documentação Swagger/OpenAPI
+- **Maven**: Gerenciamento de dependências
 
 ## ⚙️ Configuração
 
@@ -246,18 +258,6 @@ Authorization: Bearer <token>
 - Expiração: 8 horas
 - Algoritmo: HS256
 - Secret: `JWT_SECRET` (variável de ambiente)
-
-## 🛠️ Tecnologias Utilizadas
-
-- **Spring Boot 3.2.0**: Framework principal
-- **Spring Data JPA**: Persistência de dados
-- **Spring Security**: Autenticação e autorização
-- **PostgreSQL**: Banco de dados relacional
-- **JWT (jjwt 0.12.3)**: Tokens de autenticação
-- **Lombok**: Redução de boilerplate
-- **Bean Validation**: Validação de dados
-- **SpringDoc OpenAPI 2.3.0**: Documentação Swagger/OpenAPI
-- **Maven**: Gerenciamento de dependências
 
 ## 💻 Comandos Úteis
 
