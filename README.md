@@ -56,14 +56,38 @@ JWT_EXPIRATION=28800000  # 8 horas em milissegundos
 PORT=3000
 ```
 
-### Banco de Dados
+### Banco de Dados com Docker
 
-Para desenvolvimento local com Docker:
+O projeto inclui arquivos Docker para configurar o PostgreSQL rapidamente:
 
 ```bash
+# Na raiz do projeto
 cd docker
-docker-compose up -d postgres
+
+# Iniciar o banco (cria as tabelas automaticamente)
+docker-compose up -d
+
+# Verificar se está rodando
+docker ps
+
+# Ver logs
+docker logs mediapp_postgres
+
+# Parar o banco
+docker-compose down
+
+# Parar e remover dados (reset completo)
+docker-compose down -v
 ```
+
+**Credenciais padrão:**
+- Host: `localhost`
+- Porta: `5432`
+- Database: `meu_app_db`
+- Usuário: `zrodrigolimaz`
+- Senha: `Mediapp2024!Secure`
+
+O arquivo `schema.sql` é executado automaticamente na primeira inicialização, criando todas as tabelas necessárias.
 
 ## 🚀 Executando a Aplicação
 
