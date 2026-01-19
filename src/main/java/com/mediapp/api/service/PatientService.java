@@ -216,38 +216,65 @@ public class PatientService {
     
     private Patient mapResultSetToPatient(ResultSet rs) throws java.sql.SQLException {
         Patient patient = new Patient();
-        patient.setId(UUID.fromString(rs.getString("id")));
-        patient.setFullName(rs.getString("full_name"));
-        patient.setTaxId(rs.getString("tax_id"));
-        patient.setIdentityDocument(rs.getString("identity_document"));
-        patient.setBirthDate(rs.getString("birth_date"));
+        
+        // Mapear campos string usando Map
+        java.util.Map<String, java.util.function.Consumer<String>> stringFields = new java.util.HashMap<>();
+        stringFields.put("id", value -> patient.setId(UUID.fromString(value)));
+        stringFields.put("full_name", patient::setFullName);
+        stringFields.put("tax_id", patient::setTaxId);
+        stringFields.put("identity_document", patient::setIdentityDocument);
+        stringFields.put("birth_date", patient::setBirthDate);
+        stringFields.put("contact_phone", patient::setContactPhone);
+        stringFields.put("secondary_contact_phone", patient::setSecondaryContactPhone);
+        stringFields.put("email", patient::setEmail);
+        stringFields.put("zip_code", patient::setZipCode);
+        stringFields.put("address_street", patient::setAddressStreet);
+        stringFields.put("address_number", patient::setAddressNumber);
+        stringFields.put("address_complement", patient::setAddressComplement);
+        stringFields.put("address_neighborhood", patient::setAddressNeighborhood);
+        stringFields.put("address_city", patient::setAddressCity);
+        stringFields.put("address_state", patient::setAddressState);
+        stringFields.put("guardian_full_name", patient::setGuardianFullName);
+        stringFields.put("guardian_tax_id", patient::setGuardianTaxId);
+        stringFields.put("guardian_contact_phone", patient::setGuardianContactPhone);
+        stringFields.put("health_insurance", patient::setHealthInsurance);
+        stringFields.put("insurance_card_number", patient::setInsuranceCardNumber);
+        stringFields.put("allergies", patient::setAllergies);
+        stringFields.put("general_observations", patient::setGeneralObservations);
+        
+        stringFields.forEach((column, setter) -> {
+            try {
+                String value = rs.getString(column);
+                if (value != null) {
+                    setter.accept(value);
+                }
+            } catch (java.sql.SQLException e) {
+                throw new RuntimeException("Erro ao mapear campo " + column, e);
+            }
+        });
+        
+        // Campos especiais
         String sexStr = rs.getString("sex");
         if (sexStr != null) {
             patient.setSex(SexType.valueOf(sexStr));
         }
-        patient.setContactPhone(rs.getString("contact_phone"));
-        patient.setSecondaryContactPhone(rs.getString("secondary_contact_phone"));
-        patient.setEmail(rs.getString("email"));
-        patient.setZipCode(rs.getString("zip_code"));
-        patient.setAddressStreet(rs.getString("address_street"));
-        patient.setAddressNumber(rs.getString("address_number"));
-        patient.setAddressComplement(rs.getString("address_complement"));
-        patient.setAddressNeighborhood(rs.getString("address_neighborhood"));
-        patient.setAddressCity(rs.getString("address_city"));
-        patient.setAddressState(rs.getString("address_state"));
-        patient.setGuardianFullName(rs.getString("guardian_full_name"));
-        patient.setGuardianTaxId(rs.getString("guardian_tax_id"));
-        patient.setGuardianContactPhone(rs.getString("guardian_contact_phone"));
-        patient.setHealthInsurance(rs.getString("health_insurance"));
-        patient.setInsuranceCardNumber(rs.getString("insurance_card_number"));
-        patient.setAllergies(rs.getString("allergies"));
+        
         Integer fitzpatrick = rs.getObject("fitzpatrick_phototype", Integer.class);
         patient.setFitzpatrickPhototype(fitzpatrick);
-        patient.setGeneralObservations(rs.getString("general_observations"));
-        patient.setActive(rs.getBoolean("is_active"));
-        patient.setCreatedAt(rs.getTimestamp("created_at").toInstant());
-        patient.setUpdatedAt(rs.getTimestamp("updated_at").toInstant());
         
+        patient.setActive(rs.getBoolean("is_active"));
+        
+        java.sql.Timestamp createdAt = rs.getTimestamp("created_at");
+        if (createdAt != null) {
+            patient.setCreatedAt(createdAt.toInstant());
+        }
+        
+        java.sql.Timestamp updatedAt = rs.getTimestamp("updated_at");
+        if (updatedAt != null) {
+            patient.setUpdatedAt(updatedAt.toInstant());
+        }
+        
+        // Workspace
         String workspaceIdStr = rs.getString("workspace_id_col");
         if (workspaceIdStr != null) {
             Workspace workspace = new Workspace();
