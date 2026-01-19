@@ -4,6 +4,7 @@ import com.mediapp.api.dto.auth.AuthRequestDTO;
 import com.mediapp.api.dto.auth.AuthResponseDTO;
 import com.mediapp.api.dto.auth.LoginDto;
 import com.mediapp.api.dto.auth.LoginResponseDto;
+import com.mediapp.api.dto.auth.ProfileDto;
 import com.mediapp.api.entity.User;
 import com.mediapp.api.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -63,15 +64,16 @@ public class AuthController {
 
     @Operation(
         summary = "Obter perfil do usuário",
-        description = "Retorna dados do usuário autenticado"
+        description = "Retorna dados do usuário autenticado com workspace"
     )
     @SecurityRequirement(name = "Bearer Authentication")
     @ApiResponse(responseCode = "200", description = "Dados do usuário")
     @GetMapping("/profile")
-    public ResponseEntity<User> profile() {
+    public ResponseEntity<ProfileDto> profile() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         User user = (User) auth.getPrincipal();
-        return ResponseEntity.ok(user);
+        ProfileDto profile = authService.getProfile(user);
+        return ResponseEntity.ok(profile);
     }
 }
 

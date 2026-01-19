@@ -1,5 +1,6 @@
 package com.mediapp.api.entity;
 
+import com.mediapp.api.converter.UserRoleConverter;
 import jakarta.persistence.*;
 
 import java.time.Instant;
@@ -34,7 +35,7 @@ public class User {
     @Column(name = "crm", unique = true, length = 20)
     private String crm;
 
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = UserRoleConverter.class)
     @Column(name = "role", nullable = false)
     private UserRole role = UserRole.MEMBER;
 
@@ -60,6 +61,11 @@ public class User {
         Instant now = Instant.now();
         this.createdAt = now;
         this.updatedAt = now;
+    }
+    
+    // Método auxiliar para obter o valor do enum como string para SQL
+    public String getRoleAsString() {
+        return role != null ? role.name() : "MEMBER";
     }
 
     @PreUpdate

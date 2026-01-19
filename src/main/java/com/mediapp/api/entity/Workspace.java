@@ -1,5 +1,6 @@
 package com.mediapp.api.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 
 import java.time.Instant;
@@ -25,12 +26,13 @@ public class Workspace {
     private String name;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "document_type", nullable = false)
+    @Column(name = "document_type", nullable = false, columnDefinition = "document_type")
     private DocumentType documentType;
 
     @Column(name = "document_number", nullable = false, length = 18)
     private String documentNumber;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "owner_id", nullable = false)
     private User owner;
