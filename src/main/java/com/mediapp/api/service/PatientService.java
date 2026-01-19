@@ -18,8 +18,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 @Service
 public class PatientService {
@@ -35,15 +37,12 @@ public class PatientService {
 
     @Transactional
     public Patient create(CreatePatientDto dto, User user) {
-        // Normalizar CPF removendo pontos e traços
         String normalizedTaxId = dto.taxId().replaceAll("[.-]", "");
 
-        // Verificar se já existe paciente ativo com mesmo CPF no workspace
         if (patientRepository.existsByTaxIdAndWorkspaceIdAndActiveTrue(normalizedTaxId, user.getWorkspace().getId())) {
             throw new ConflictException("CPF já cadastrado neste consultório.");
         }
 
-        // Sempre usar query nativa para evitar problema de enum com Hibernate
         return createWithNativeQuery(dto, user, normalizedTaxId);
     }
 
@@ -53,164 +52,89 @@ public class PatientService {
         java.sql.Timestamp nowTimestamp = java.sql.Timestamp.from(now);
         UUID workspaceId = user.getWorkspace().getId();
 
-        // Construir query SQL dinâmica baseada nos campos presentes
-        StringBuilder sqlBuilder = new StringBuilder();
-        sqlBuilder.append("INSERT INTO patients (id, workspace_id, full_name, tax_id, birth_date, contact_phone, is_active, created_at, updated_at");
+        // Campos obrigatórios
+        List<FieldMapping> fields = new ArrayList<>();
+        fields.add(new FieldMapping("id", patientId.toString(), FieldType.UUID));
+        fields.add(new FieldMapping("workspace_id", workspaceId.toString(), FieldType.UUID));
+        fields.add(new FieldMapping("full_name", dto.fullName(), FieldType.STRING));
+        fields.add(new FieldMapping("tax_id", normalizedTaxId, FieldType.STRING));
+        fields.add(new FieldMapping("birth_date", dto.birthDate(), FieldType.STRING));
+        fields.add(new FieldMapping("contact_phone", dto.contactPhone(), FieldType.STRING));
+        fields.add(new FieldMapping("is_active", true, FieldType.BOOLEAN));
+        fields.add(new FieldMapping("created_at", nowTimestamp, FieldType.TIMESTAMP));
+        fields.add(new FieldMapping("updated_at", nowTimestamp, FieldType.TIMESTAMP));
+
+        // Campos opcionais
+        addOptionalField(fields, "sex", dto.sex(), () -> dto.sex().name(), FieldType.ENUM);
+        addOptionalField(fields, "identity_document", dto.identityDocument(), FieldType.STRING);
+        addOptionalField(fields, "secondary_contact_phone", dto.secondaryContactPhone(), FieldType.STRING);
+        addOptionalField(fields, "email", dto.email(), FieldType.STRING);
+        addOptionalField(fields, "zip_code", dto.zipCode(), FieldType.STRING);
+        addOptionalField(fields, "address_street", dto.addressStreet(), FieldType.STRING);
+        addOptionalField(fields, "address_number", dto.addressNumber(), FieldType.STRING);
+        addOptionalField(fields, "address_complement", dto.addressComplement(), FieldType.STRING);
+        addOptionalField(fields, "address_neighborhood", dto.addressNeighborhood(), FieldType.STRING);
+        addOptionalField(fields, "address_city", dto.addressCity(), FieldType.STRING);
+        addOptionalField(fields, "address_state", dto.addressState(), FieldType.STRING);
+        addOptionalField(fields, "guardian_full_name", dto.guardianFullName(), FieldType.STRING);
+        addOptionalField(fields, "guardian_tax_id", dto.guardianTaxId(), FieldType.STRING);
+        addOptionalField(fields, "guardian_contact_phone", dto.guardianContactPhone(), FieldType.STRING);
+        addOptionalField(fields, "health_insurance", dto.healthInsurance(), FieldType.STRING);
+        addOptionalField(fields, "insurance_card_number", dto.insuranceCardNumber(), FieldType.STRING);
+        addOptionalField(fields, "allergies", dto.allergies(), FieldType.STRING);
+        addOptionalField(fields, "fitzpatrick_phototype", dto.fitzpatrickPhototype(), FieldType.INTEGER);
+        addOptionalField(fields, "general_observations", dto.generalObservations(), FieldType.STRING);
+
+        String sql = buildInsertQuery(fields);
+        executeInsert(sql, fields);
+
+        return findPatientById(patientId);
+    }
+
+    private void addOptionalField(List<FieldMapping> fields, String fieldName, Object value, FieldType type) {
+        if (value != null) {
+            fields.add(new FieldMapping(fieldName, value, type));
+        }
+    }
+
+    private <T> void addOptionalField(List<FieldMapping> fields, String fieldName, T value, Supplier<Object> valueMapper, FieldType type) {
+        if (value != null) {
+            fields.add(new FieldMapping(fieldName, valueMapper.get(), type));
+        }
+    }
+
+    private String buildInsertQuery(List<FieldMapping> fields) {
+        StringBuilder sql = new StringBuilder("INSERT INTO patients (");
         
-        List<String> fields = new java.util.ArrayList<>();
-        List<Object> values = new java.util.ArrayList<>();
-        
-        fields.add("id"); values.add(patientId.toString());
-        fields.add("workspace_id"); values.add(workspaceId.toString());
-        fields.add("full_name"); values.add(dto.fullName());
-        fields.add("tax_id"); values.add(normalizedTaxId);
-        fields.add("birth_date"); values.add(dto.birthDate());
-        fields.add("contact_phone"); values.add(dto.contactPhone());
-        fields.add("is_active"); values.add(true);
-        fields.add("created_at"); values.add(nowTimestamp);
-        fields.add("updated_at"); values.add(nowTimestamp);
-
-        // Adicionar sex apenas se presente
-        if (dto.sex() != null) {
-            sqlBuilder.append(", sex");
-            fields.add("sex");
-            values.add(dto.sex().name());
-        }
-
-        if (dto.identityDocument() != null) {
-            sqlBuilder.append(", identity_document");
-            fields.add("identity_document");
-            values.add(dto.identityDocument());
-        }
-        if (dto.secondaryContactPhone() != null) {
-            sqlBuilder.append(", secondary_contact_phone");
-            fields.add("secondary_contact_phone");
-            values.add(dto.secondaryContactPhone());
-        }
-        if (dto.email() != null) {
-            sqlBuilder.append(", email");
-            fields.add("email");
-            values.add(dto.email());
-        }
-        if (dto.zipCode() != null) {
-            sqlBuilder.append(", zip_code");
-            fields.add("zip_code");
-            values.add(dto.zipCode());
-        }
-        if (dto.addressStreet() != null) {
-            sqlBuilder.append(", address_street");
-            fields.add("address_street");
-            values.add(dto.addressStreet());
-        }
-        if (dto.addressNumber() != null) {
-            sqlBuilder.append(", address_number");
-            fields.add("address_number");
-            values.add(dto.addressNumber());
-        }
-        if (dto.addressComplement() != null) {
-            sqlBuilder.append(", address_complement");
-            fields.add("address_complement");
-            values.add(dto.addressComplement());
-        }
-        if (dto.addressNeighborhood() != null) {
-            sqlBuilder.append(", address_neighborhood");
-            fields.add("address_neighborhood");
-            values.add(dto.addressNeighborhood());
-        }
-        if (dto.addressCity() != null) {
-            sqlBuilder.append(", address_city");
-            fields.add("address_city");
-            values.add(dto.addressCity());
-        }
-        if (dto.addressState() != null) {
-            sqlBuilder.append(", address_state");
-            fields.add("address_state");
-            values.add(dto.addressState());
-        }
-        if (dto.guardianFullName() != null) {
-            sqlBuilder.append(", guardian_full_name");
-            fields.add("guardian_full_name");
-            values.add(dto.guardianFullName());
-        }
-        if (dto.guardianTaxId() != null) {
-            sqlBuilder.append(", guardian_tax_id");
-            fields.add("guardian_tax_id");
-            values.add(dto.guardianTaxId());
-        }
-        if (dto.guardianContactPhone() != null) {
-            sqlBuilder.append(", guardian_contact_phone");
-            fields.add("guardian_contact_phone");
-            values.add(dto.guardianContactPhone());
-        }
-        if (dto.healthInsurance() != null) {
-            sqlBuilder.append(", health_insurance");
-            fields.add("health_insurance");
-            values.add(dto.healthInsurance());
-        }
-        if (dto.insuranceCardNumber() != null) {
-            sqlBuilder.append(", insurance_card_number");
-            fields.add("insurance_card_number");
-            values.add(dto.insuranceCardNumber());
-        }
-        if (dto.allergies() != null) {
-            sqlBuilder.append(", allergies");
-            fields.add("allergies");
-            values.add(dto.allergies());
-        }
-        if (dto.fitzpatrickPhototype() != null) {
-            sqlBuilder.append(", fitzpatrick_phototype");
-            fields.add("fitzpatrick_phototype");
-            values.add(dto.fitzpatrickPhototype());
-        }
-        if (dto.generalObservations() != null) {
-            sqlBuilder.append(", general_observations");
-            fields.add("general_observations");
-            values.add(dto.generalObservations());
-        }
-
-        sqlBuilder.append(") VALUES (");
         for (int i = 0; i < fields.size(); i++) {
-            if (i > 0) sqlBuilder.append(", ");
-            String fieldName = fields.get(i);
-            if ("id".equals(fieldName) || "workspace_id".equals(fieldName)) {
-                sqlBuilder.append("CAST(? AS uuid)");
-            } else if ("sex".equals(fieldName)) {
-                sqlBuilder.append("CAST(? AS patients_sex_enum)");
-            } else {
-                sqlBuilder.append("?");
-            }
+            if (i > 0) sql.append(", ");
+            sql.append(fields.get(i).getColumnName());
         }
-        sqlBuilder.append(")");
+        
+        sql.append(") VALUES (");
+        
+        for (int i = 0; i < fields.size(); i++) {
+            if (i > 0) sql.append(", ");
+            FieldMapping field = fields.get(i);
+            sql.append(field.getPlaceholder());
+        }
+        
+        sql.append(")");
+        return sql.toString();
+    }
 
+    private void executeInsert(String sql, List<FieldMapping> fields) {
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sqlBuilder.toString())) {
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
             
-            int paramIndex = 1;
-            for (Object value : values) {
-                String fieldName = fields.get(paramIndex - 1);
-                if ("id".equals(fieldName) || "workspace_id".equals(fieldName)) {
-                    stmt.setString(paramIndex, value.toString());
-                } else if ("sex".equals(fieldName)) {
-                    stmt.setString(paramIndex, value.toString());
-                } else if ("created_at".equals(fieldName) || "updated_at".equals(fieldName)) {
-                    stmt.setTimestamp(paramIndex, (java.sql.Timestamp) value);
-                } else if ("is_active".equals(fieldName)) {
-                    stmt.setBoolean(paramIndex, (Boolean) value);
-                } else if ("fitzpatrick_phototype".equals(fieldName)) {
-                    stmt.setInt(paramIndex, (Integer) value);
-                } else {
-                    stmt.setString(paramIndex, value != null ? value.toString() : null);
-                }
-                paramIndex++;
+            for (int i = 0; i < fields.size(); i++) {
+                fields.get(i).setParameter(stmt, i + 1);
             }
             
             stmt.executeUpdate();
         } catch (java.sql.SQLException e) {
             throw new RuntimeException("Erro ao criar paciente: " + e.getMessage(), e);
         }
-
-        // Buscar o paciente recém-criado
-        return findPatientById(patientId);
     }
     
     private Patient findPatientById(UUID id) {
@@ -238,7 +162,6 @@ public class PatientService {
     }
 
     public List<Patient> findAll(User user) {
-        // Usar query nativa para evitar problemas de serialização com proxy Hibernate
         String sql = "SELECT p.id, p.workspace_id, p.full_name, p.tax_id, p.identity_document, p.birth_date, " +
             "p.sex, p.contact_phone, p.secondary_contact_phone, p.email, p.zip_code, p.address_street, p.address_number, " +
             "p.address_complement, p.address_neighborhood, p.address_city, p.address_state, p.guardian_full_name, " +
@@ -248,7 +171,7 @@ public class PatientService {
             "FROM patients p LEFT JOIN workspaces w ON p.workspace_id = w.id " +
             "WHERE p.workspace_id = CAST(? AS uuid) AND p.is_active = true ORDER BY p.full_name ASC";
         
-        List<Patient> patients = new java.util.ArrayList<>();
+        List<Patient> patients = new ArrayList<>();
         
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -266,7 +189,6 @@ public class PatientService {
     }
 
     public Patient findOne(UUID id, User user) {
-        // Usar query nativa para evitar problemas de serialização com proxy Hibernate
         String sql = "SELECT p.id, p.workspace_id, p.full_name, p.tax_id, p.identity_document, p.birth_date, " +
             "p.sex, p.contact_phone, p.secondary_contact_phone, p.email, p.zip_code, p.address_street, p.address_number, " +
             "p.address_complement, p.address_neighborhood, p.address_city, p.address_state, p.guardian_full_name, " +
@@ -326,7 +248,6 @@ public class PatientService {
         patient.setCreatedAt(rs.getTimestamp("created_at").toInstant());
         patient.setUpdatedAt(rs.getTimestamp("updated_at").toInstant());
         
-        // Carregar workspace
         String workspaceIdStr = rs.getString("workspace_id_col");
         if (workspaceIdStr != null) {
             Workspace workspace = new Workspace();
@@ -340,10 +261,8 @@ public class PatientService {
 
     @Transactional
     public Patient update(UUID id, UpdatePatientDto dto, User user) {
-        // Verificar existência e ownership
         findOne(id, user);
 
-        // Se o CPF for alterado, verificar conflito
         if (dto.taxId() != null) {
             String normalizedTaxId = dto.taxId().replaceAll("[.-]", "");
             
@@ -355,7 +274,6 @@ public class PatientService {
                 });
         }
 
-        // Sempre usar query nativa para evitar problemas com enum PostgreSQL
         return updateWithNativeQuery(id, dto);
     }
 
@@ -363,173 +281,76 @@ public class PatientService {
         Instant now = Instant.now();
         java.sql.Timestamp nowTimestamp = java.sql.Timestamp.from(now);
 
-        // Construir query SQL dinâmica baseada nos campos presentes
-        StringBuilder sqlBuilder = new StringBuilder();
-        sqlBuilder.append("UPDATE patients SET updated_at = ?");
-        
-        List<String> fields = new java.util.ArrayList<>();
-        List<Object> values = new java.util.ArrayList<>();
-        values.add(nowTimestamp);
+        List<FieldMapping> fields = new ArrayList<>();
+        fields.add(new FieldMapping("updated_at", nowTimestamp, FieldType.TIMESTAMP));
 
-        if (dto.fullName() != null) {
-            sqlBuilder.append(", full_name = ?");
-            fields.add("full_name");
-            values.add(dto.fullName());
-        }
+        // Campos opcionais para atualização
+        addOptionalField(fields, "full_name", dto.fullName(), FieldType.STRING);
         if (dto.taxId() != null) {
             String normalizedTaxId = dto.taxId().replaceAll("[.-]", "");
-            sqlBuilder.append(", tax_id = ?");
-            fields.add("tax_id");
-            values.add(normalizedTaxId);
+            addOptionalField(fields, "tax_id", normalizedTaxId, FieldType.STRING);
         }
-        if (dto.birthDate() != null) {
-            sqlBuilder.append(", birth_date = ?");
-            fields.add("birth_date");
-            values.add(dto.birthDate());
-        }
-        if (dto.contactPhone() != null) {
-            sqlBuilder.append(", contact_phone = ?");
-            fields.add("contact_phone");
-            values.add(dto.contactPhone());
-        }
-        if (dto.identityDocument() != null) {
-            sqlBuilder.append(", identity_document = ?");
-            fields.add("identity_document");
-            values.add(dto.identityDocument());
-        }
-        if (dto.sex() != null) {
-            sqlBuilder.append(", sex = CAST(? AS patients_sex_enum)");
-            fields.add("sex");
-            values.add(dto.sex().name());
-        }
-        if (dto.secondaryContactPhone() != null) {
-            sqlBuilder.append(", secondary_contact_phone = ?");
-            fields.add("secondary_contact_phone");
-            values.add(dto.secondaryContactPhone());
-        }
-        if (dto.email() != null) {
-            sqlBuilder.append(", email = ?");
-            fields.add("email");
-            values.add(dto.email());
-        }
-        if (dto.zipCode() != null) {
-            sqlBuilder.append(", zip_code = ?");
-            fields.add("zip_code");
-            values.add(dto.zipCode());
-        }
-        if (dto.addressStreet() != null) {
-            sqlBuilder.append(", address_street = ?");
-            fields.add("address_street");
-            values.add(dto.addressStreet());
-        }
-        if (dto.addressNumber() != null) {
-            sqlBuilder.append(", address_number = ?");
-            fields.add("address_number");
-            values.add(dto.addressNumber());
-        }
-        if (dto.addressComplement() != null) {
-            sqlBuilder.append(", address_complement = ?");
-            fields.add("address_complement");
-            values.add(dto.addressComplement());
-        }
-        if (dto.addressNeighborhood() != null) {
-            sqlBuilder.append(", address_neighborhood = ?");
-            fields.add("address_neighborhood");
-            values.add(dto.addressNeighborhood());
-        }
-        if (dto.addressCity() != null) {
-            sqlBuilder.append(", address_city = ?");
-            fields.add("address_city");
-            values.add(dto.addressCity());
-        }
-        if (dto.addressState() != null) {
-            sqlBuilder.append(", address_state = ?");
-            fields.add("address_state");
-            values.add(dto.addressState());
-        }
-        if (dto.guardianFullName() != null) {
-            sqlBuilder.append(", guardian_full_name = ?");
-            fields.add("guardian_full_name");
-            values.add(dto.guardianFullName());
-        }
-        if (dto.guardianTaxId() != null) {
-            sqlBuilder.append(", guardian_tax_id = ?");
-            fields.add("guardian_tax_id");
-            values.add(dto.guardianTaxId());
-        }
-        if (dto.guardianContactPhone() != null) {
-            sqlBuilder.append(", guardian_contact_phone = ?");
-            fields.add("guardian_contact_phone");
-            values.add(dto.guardianContactPhone());
-        }
-        if (dto.healthInsurance() != null) {
-            sqlBuilder.append(", health_insurance = ?");
-            fields.add("health_insurance");
-            values.add(dto.healthInsurance());
-        }
-        if (dto.insuranceCardNumber() != null) {
-            sqlBuilder.append(", insurance_card_number = ?");
-            fields.add("insurance_card_number");
-            values.add(dto.insuranceCardNumber());
-        }
-        if (dto.allergies() != null) {
-            sqlBuilder.append(", allergies = ?");
-            fields.add("allergies");
-            values.add(dto.allergies());
-        }
-        if (dto.fitzpatrickPhototype() != null) {
-            sqlBuilder.append(", fitzpatrick_phototype = ?");
-            fields.add("fitzpatrick_phototype");
-            values.add(dto.fitzpatrickPhototype());
-        }
-        if (dto.generalObservations() != null) {
-            sqlBuilder.append(", general_observations = ?");
-            fields.add("general_observations");
-            values.add(dto.generalObservations());
-        }
+        addOptionalField(fields, "birth_date", dto.birthDate(), FieldType.STRING);
+        addOptionalField(fields, "contact_phone", dto.contactPhone(), FieldType.STRING);
+        addOptionalField(fields, "identity_document", dto.identityDocument(), FieldType.STRING);
+        addOptionalField(fields, "sex", dto.sex(), () -> dto.sex().name(), FieldType.ENUM);
+        addOptionalField(fields, "secondary_contact_phone", dto.secondaryContactPhone(), FieldType.STRING);
+        addOptionalField(fields, "email", dto.email(), FieldType.STRING);
+        addOptionalField(fields, "zip_code", dto.zipCode(), FieldType.STRING);
+        addOptionalField(fields, "address_street", dto.addressStreet(), FieldType.STRING);
+        addOptionalField(fields, "address_number", dto.addressNumber(), FieldType.STRING);
+        addOptionalField(fields, "address_complement", dto.addressComplement(), FieldType.STRING);
+        addOptionalField(fields, "address_neighborhood", dto.addressNeighborhood(), FieldType.STRING);
+        addOptionalField(fields, "address_city", dto.addressCity(), FieldType.STRING);
+        addOptionalField(fields, "address_state", dto.addressState(), FieldType.STRING);
+        addOptionalField(fields, "guardian_full_name", dto.guardianFullName(), FieldType.STRING);
+        addOptionalField(fields, "guardian_tax_id", dto.guardianTaxId(), FieldType.STRING);
+        addOptionalField(fields, "guardian_contact_phone", dto.guardianContactPhone(), FieldType.STRING);
+        addOptionalField(fields, "health_insurance", dto.healthInsurance(), FieldType.STRING);
+        addOptionalField(fields, "insurance_card_number", dto.insuranceCardNumber(), FieldType.STRING);
+        addOptionalField(fields, "allergies", dto.allergies(), FieldType.STRING);
+        addOptionalField(fields, "fitzpatrick_phototype", dto.fitzpatrickPhototype(), FieldType.INTEGER);
+        addOptionalField(fields, "general_observations", dto.generalObservations(), FieldType.STRING);
 
-        sqlBuilder.append(" WHERE id = CAST(? AS uuid)");
-        values.add(id.toString());
+        String sql = buildUpdateQuery(fields, id);
+        executeUpdate(sql, fields, id);
 
+        return findPatientById(id);
+    }
+
+    private String buildUpdateQuery(List<FieldMapping> fields, UUID id) {
+        StringBuilder sql = new StringBuilder("UPDATE patients SET ");
+        
+        for (int i = 0; i < fields.size(); i++) {
+            if (i > 0) sql.append(", ");
+            FieldMapping field = fields.get(i);
+            sql.append(field.getColumnName()).append(" = ").append(field.getPlaceholder());
+        }
+        
+        sql.append(" WHERE id = CAST(? AS uuid)");
+        return sql.toString();
+    }
+
+    private void executeUpdate(String sql, List<FieldMapping> fields, UUID id) {
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sqlBuilder.toString())) {
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             int paramIndex = 1;
-            for (Object value : values) {
-                if (paramIndex == 1) {
-                    // updated_at
-                    stmt.setTimestamp(paramIndex, (java.sql.Timestamp) value);
-                } else if (paramIndex == values.size()) {
-                    // id (último parâmetro)
-                    stmt.setString(paramIndex, value.toString());
-                } else {
-                    String fieldName = fields.get(paramIndex - 2); // -2 porque pulamos updated_at e id
-                    if ("sex".equals(fieldName)) {
-                        stmt.setString(paramIndex, value.toString());
-                    } else if ("fitzpatrick_phototype".equals(fieldName)) {
-                        stmt.setInt(paramIndex, (Integer) value);
-                    } else {
-                        stmt.setString(paramIndex, value != null ? value.toString() : null);
-                    }
-                }
-                paramIndex++;
+            for (FieldMapping field : fields) {
+                field.setParameter(stmt, paramIndex++);
             }
             
+            stmt.setString(paramIndex, id.toString());
             stmt.executeUpdate();
         } catch (java.sql.SQLException e) {
             throw new RuntimeException("Erro ao atualizar paciente: " + e.getMessage(), e);
         }
-
-        // Buscar o paciente atualizado
-        return findPatientById(id);
     }
 
     @Transactional
     public void remove(UUID id, User user) {
-        // Verificar existência e ownership
         findOne(id, user);
         
-        // Soft delete usando query nativa para evitar problemas com enum PostgreSQL
         String sql = "UPDATE patients SET is_active = false, updated_at = ? WHERE id = CAST(? AS uuid)";
         
         try (Connection conn = dataSource.getConnection();
@@ -541,5 +362,44 @@ public class PatientService {
             throw new RuntimeException("Erro ao remover paciente: " + e.getMessage(), e);
         }
     }
-}
 
+    // Classe auxiliar para mapear campos e valores
+    private static class FieldMapping {
+        private final String columnName;
+        private final Object value;
+        private final FieldType type;
+
+        public FieldMapping(String columnName, Object value, FieldType type) {
+            this.columnName = columnName;
+            this.value = value;
+            this.type = type;
+        }
+
+        public String getColumnName() {
+            return columnName;
+        }
+
+        public String getPlaceholder() {
+            return switch (type) {
+                case UUID -> "CAST(? AS uuid)";
+                case ENUM -> "CAST(? AS patients_sex_enum)";
+                default -> "?";
+            };
+        }
+
+        public void setParameter(PreparedStatement stmt, int index) throws java.sql.SQLException {
+            switch (type) {
+                case UUID -> stmt.setString(index, value.toString());
+                case ENUM -> stmt.setString(index, value.toString());
+                case TIMESTAMP -> stmt.setTimestamp(index, (java.sql.Timestamp) value);
+                case BOOLEAN -> stmt.setBoolean(index, (Boolean) value);
+                case INTEGER -> stmt.setInt(index, (Integer) value);
+                case STRING -> stmt.setString(index, value != null ? value.toString() : null);
+            }
+        }
+    }
+
+    private enum FieldType {
+        UUID, ENUM, TIMESTAMP, BOOLEAN, INTEGER, STRING
+    }
+}
